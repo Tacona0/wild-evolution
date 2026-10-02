@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>荒野演化 (Wild Evolution)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #111; }
+        ::-webkit-scrollbar-thumb { background: #333; }
+        .bar-fill { transition: width 0.1s linear; }
+    </style>
+</head>
+<body class="bg-black text-zinc-300 font-sans text-xs select-none min-h-screen flex flex-col">
+
+    <!-- 顶栏：核心数据与状态 -->
+    <header class="bg-zinc-950 border-b border-zinc-800 p-2.5 sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-3">
+            
+            <div class="flex items-center space-x-3">
+                <span class="font-bold text-amber-500 text-sm tracking-wider">WILD EVOLUTION</span>
+                <span class="text-zinc-600">|</span>
+                <span class="text-zinc-400 font-mono" id="hdr-era">Tier 0: 孤狼之夜</span>
+            </div>
+
+            <div class="flex items-center space-x-6 font-mono">
+                <div>
+                    <span class="text-zinc-500">FOOD:</span> 
+                    <span class="text-emerald-400 font-bold" id="hdr-food">0.0</span>
+                    <span class="text-zinc-600 text-[10px]" id="hdr-food-net">(+0/s)</span>
+                </div>
+                <div>
+                    <span class="text-zinc-500">DOM:</span> 
+                    <span class="text-purple-400 font-bold" id="hdr-dom">0.0</span>
+                </div>
+                <div>
+                    <span class="text-zinc-500">GENE XP:</span> 
+                    <span class="text-amber-400 font-bold" id="hdr-mult">1.00x</span>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2">
+                <button id="btn-pause" onclick="togglePause()" class="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded text-[11px]">暂停</button>
+                <button onclick="saveGame(true)" class="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded text-[11px]">保存</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主体区域 -->
+    <main class="max-w-6xl mx-auto w-full flex-1 p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+        
+        <!-- 左侧：年龄进度、生存面板、繁衍转生 -->
+        <div class="space-y-3">
+            
+            <!-- 年龄与寿命进度条 -->
+            <div class="bg-zinc-950 border border-zinc-800 p-3 rounded space-y-1.5">
+                <div class="flex justify-between items-center font-mono">
+                    <span class="text-zinc-400 font-bold">AGE / LIFESPAN</span>
+                    <span class="text-amber-500" id="lbl-age">0.0 / 12.0 岁</span>
+                </div>
+                <div class="w-full bg-zinc-900 h-2 rounded-full overflow-hidden border border-zinc-800">
+                    <div id="bar-age" class="bg-amber-500 h-full bar-fill" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- 繁衍转生 (Rebirth) -->
+            <div class="bg-zinc-950 border border-amber-900/40 p-3 rounded space-y-2">
+                <div class="flex justify-between items-center">
+                    <span class="font-bold text-amber-500">血脉繁衍 (REBIRTH)</span>
+                    <span class="font-mono text-zinc-400" id="lbl-gene-current">当前: 1.00x</span>
+                </div>
+                <p class="text-[11px] text-zinc-500 leading-tight">寿命到达上限或掌握新本能时可繁衍。重置行为与食物，获得永久经验增长印记。</p>
+                <div class="flex justify-between items-center bg-zinc-900/80 p-2 rounded border border-zinc-800 font-mono">
+                    <span class="text-zinc-400">下代新印记加成:</span>
+                    <span class="text-emerald-400 font-bold" id="lbl-gene-next">+0.00x</span>
+                </div>
+                <button id="btn-rebirth" onclick="triggerRebirth()" disabled class="w-full py-1.5 bg-amber-600 hover:bg-amber-500 disabled:bg-zinc-900 disabled:text-zinc-700 font-bold text-black rounded transition text-xs">
+                    繁衍后代 (条件不足)
+                </button>
+            </div>
+
+            <!-- 日志区 -->
+            <div class="bg-zinc-950 border border-zinc-800 p-2.5 rounded h-40 flex flex-col">
+                <span class="text-zinc-500 font-bold mb-1 border-b border-zinc-800 pb-1">LOGS</span>
+                <div id="game-log" class="flex-1 overflow-y-auto space-y-1 font-mono text-[11px]">
+                    <p class="text-amber-500">[系统] 孤狼在迷雾山谷中苏醒...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 中间与右侧：行为与技能面板 (双栏进度条) -->
+        <div class="md:col-span-2 bg-zinc-950 border border-zinc-800 rounded p-3 flex flex-col space-y-4">
+            
+            <!-- 导航 Tab -->
+            <div class="flex border-b border-zinc-800 space-x-4 pb-2">
+                <button onclick="switchTab('behaviors')" id="tab-behaviors" class="font-bold text-amber-500 border-b-2 border-amber-500 pb-1">生存行为</button>
+                <button onclick="switchTab('instincts')" id="tab-instincts" class="font-bold text-zinc-500 hover:text-zinc-300 pb-1">本能技能</button>
+                <button onclick="switchTab('lair')" id="tab-lair" class="font-bold text-zinc-500 hover:text-zinc-300 pb-1">巢穴与领地</button>
+            </div>
+
+            <!-- 1. 行为列表 (带 Tick 进度条) -->
+            <div id="panel-behaviors" class="space-y-2.5 flex-1">
+                <!-- 由 JS 填充 -->
+            </div>
+
+            <!-- 2. 本能列表 (带 XP 进度条) -->
+            <div id="panel-instincts" class="hidden space-y-2.5 flex-1">
+                <!-- 由 JS 填充 -->
+            </div>
+
+            <!-- 3. 巢穴与配置 -->
+            <div id="panel-lair" class="hidden space-y-4 flex-1">
+                <div class="space-y-2">
+                    <span class="text-zinc-400 font-bold block border-b border-zinc-800 pb-1">栖息巢穴</span>
+                    <div id="list-lairs" class="space-y-2"></div>
+                </div>
+                <div class="space-y-2">
+                    <span class="text-zinc-400 font-bold block border-b border-zinc-800 pb-1">族群配置</span>
+                    <div id="list-pack" class="grid grid-cols-2 gap-2"></div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="p-2 text-center text-zinc-700 text-[10px] border-t border-zinc-900">
+        <button onclick="hardReset()" class="hover:text-red-500">重置所有数据</button>
+    </footer>
+
+    <script>
+        // --- 1. 游戏配置数据 ---
+        const BEHAVIORS = {
+            insects: { id: 'insects', name: '捕食昆虫', food: 0.8, dom: 0, req: null },
+            rabbits: { id: 'rabbits', name: '追捕野兔', food: 3.0, dom: 0.1, req: { type: 'instinct', id: 'claws', level: 2 } },
+            scavenge: { id: 'scavenge', name: '捡拾腐肉', food: 8.0, dom: 0.2, req: { type: 'instinct', id: 'smell', level: 4 } },
+            deer: { id: 'deer', name: '伏击小型马鹿', food: 22.0, dom: 1.0, req: { type: 'instinct', id: 'stealth', level: 6 } },
+            patrol: { id: 'patrol', name: '巡逻溪流边界', food: 0, dom: 3.5, req: { type: 'behavior', id: 'deer', level: 3 } }
+        };
+
+        const INSTINCTS = {
+            claws: { id: 'claws', name: '爪牙磨砺', desc: '捕猎食物收益 +10%/级', baseCost: 15, growth: 1.15 },
+            smell: { id: 'smell', name: '敏锐嗅觉', desc: '全局经验学习速度 +5%/级', baseCost: 20, growth: 1.15 },
+            stealth: { id: 'stealth', name: '潜行伏击', desc: '减少行为体能开销 -5%/级', baseCost: 35, growth: 1.18 },
+            endurance: { id: 'endurance', name: '野性耐力', desc: '基础寿命上限 +0.5年/级', baseCost: 50, growth: 1.20 }
+        };
+
+        const LAIRS = [
+            { id: 'bush', name: '露天灌木丛', upkeep: 0.2, prosperity: 1.0, cost: 0 },
+            { id: 'hollow_tree', name: '枯树洞穴', upkeep: 1.0, prosperity: 3.0, cost: 40 },
+            { id: 'rock_cave', name: '岩石山洞', upkeep: 5.0, prosperity: 10.0, cost: 250 }
+        ];
+
+        const PACK_ITEMS = [
+            { id: 'scratching_post', name: '磨爪树干', upkeep: 0.5, prosperity: 2.0, cost: 20, desc: '爪牙经验 +20%' },
+            { id: 'mate', name: '伴侣陪伴', upkeep: 8.0, prosperity: 20.0, cost: 400, desc: '大幅提升繁荣度' }
+        ];
+
+        // --- 2. 状态存储 ---
+        let state = {
+            ageMonths: 0,
+            paused: false,
+            food: 10.0,
+            dominance: 0.0,
+            activeBehavior: 'insects',
+            tickProgress: 0,
+            geneMemory: 1.0,
+            currentLair: 'bush',
+            ownedPackItems: [],
+            behaviors: {
+                insects: { level: 1, maxLevel: 1 },
+                rabbits: { level: 0, maxLevel: 0 },
+                scavenge: { level: 0, maxLevel: 0 },
+                deer: { level: 0, maxLevel: 0 },
+                patrol: { level: 0, maxLevel: 0 }
+            },
+            instincts: {
+                claws: { level: 0, maxLevel: 0, xp: 0 },
+                smell: { level: 0, maxLevel: 0, xp: 0 },
+                stealth: { level: 0, maxLevel: 0, xp: 0 },
+                endurance: { level: 0, maxLevel: 0, xp: 0 }
+            }
+        };
+
+        // --- 3. 计算公式 ---
+        function getMaxLifespanYears() {
+            return 12.0 + (state.instincts.endurance.level * 0.5);
+        }
+
+        function getProsperity() {
+            let p = 1.0;
+            const l = LAIRS.find(x => x.id === state.currentLair);
+            if (l) p += l.prosperity;
+            state.ownedPackItems.forEach(id => {
+                const item = PACK_ITEMS.find(x => x.id === id);
+                if (item) p += item.prosperity;
+            });
+            return p;
+        }
+
+        function getGlobalXpMultiplier() {
+            const smellBonus = 1 + (state.instincts.smell.level * 0.05);
+            return state.geneMemory * smellBonus * Math.pow(getProsperity(), 0.5);
+        }
+
+        function getFoodUpkeep() {
+            let u = 0;
+            const l = LAIRS.find(x => x.id === state.currentLair);
+            if (l) u += l.upkeep;
+            state.ownedPackItems.forEach(id => {
+                const item = PACK_ITEMS.find(x => x.id === id);
+                if (item) u += item.upkeep;
+            });
+            const stealthDiscount = 1 - (state.instincts.stealth.level * 0.05);
+            return u * Math.max(0.2, stealthDiscount);
+        }
+
+        function getBehaviorGain(bId) {
+            const b = BEHAVIORS[bId];
+            if (!b) return { food: 0, dom: 0 };
+            const clawBonus = 1 + (state.instincts.claws.level * 0.10);
+            return { food: b.food * clawBonus, dom: b.dom };
+        }
+
+        function getXpReq(id, lvl) {
+            return Math.floor(INSTINCTS[id].baseCost * Math.pow(INSTINCTS[id].growth, lvl));
+        }
+
+        function getNextGeneBonus() {
+            let sumMaxLvl = 0;
+            Object.values(state.instincts).forEach(i => sumMaxLvl += i.maxLevel);
+            Object.values(state.behaviors).forEach(b => sumMaxLvl += b.maxLevel);
+            return parseFloat((sumMaxLvl / 100).toFixed(2));
+        }
+
+        // --- 4. 游戏主循环 (Tick Rate: 100ms) ---
+        function gameTick() {
+            if (state.paused) return;
+
+            // 1. 行为 Tick 进度条推进
+            state.tickProgress += 10; 
+            if (state.tickProgress >= 100) {
+                state.tickProgress = 0;
+                
+                // 时间增长
+                state.ageMonths += 1;
+
+                // 结算食物与威权
+                const gain = getBehaviorGain(state.activeBehavior);
+                const upkeep = getFoodUpkeep();
+                state.food += gain.food - upkeep;
+                state.dominance += gain.dom;
+
+                if (state.food < 0) state.food = 0;
+
+                // 提升行为熟练度
+                if (state.behaviors[state.activeBehavior]) {
+                    const bState = state.behaviors[state.activeBehavior];
+                    bState.level += 0.1;
+                    if (bState.level > bState.maxLevel) bState.maxLevel = Math.floor(bState.level);
+                }
+            }
+
+            // 2. 本能技能经验增长
+            const globalXp = getGlobalXpMultiplier();
+            Object.keys(state.instincts).forEach(id => {
+                const insState = state.instincts[id];
+                const req = getXpReq(id, insState.level);
+                
+                let rate = 0.2 * globalXp;
+                if (id === 'claws' && state.ownedPackItems.includes('scratching_post')) rate *= 1.2;
+
+                insState.xp += rate;
+                if (insState.xp >= req) {
+                    insState.xp -= req;
+                    insState.level += 1;
+                    if (insState.level > insState.maxLevel) insState.maxLevel = insState.level;
+                    log(`🎉 本能提升：【${INSTINCTS[id].name}】到达 Lv.${insState.level}`, 'text-amber-400');
+                }
+            });
+
+            // 3. 判断寿命
+            const maxMonths = getMaxLifespanYears() * 12;
+            if (state.ageMonths >= maxMonths) {
+                state.paused = true;
+                log('⏳ 寿命已终结，请点击【繁衍后代】开启下一代！', 'text-red-400');
+            }
+
+            updateUI();
+        }
+
+        // --- 5. 交互逻辑 ---
+        function setActiveBehavior(id) {
+            state.activeBehavior = id;
+            state.tickProgress = 0;
+            updateUI();
+        }
+
+        function buyLair(id) {
+            const l = LAIRS.find(x => x.id === id);
+            if (state.food >= l.cost) {
+                state.currentLair = id;
+                log(`🏕️ 迁入新巢穴：${l.name}`, 'text-sky-400');
+                updateUI();
+            }
+        }
+
+        function buyPackItem(id) {
+            const item = PACK_ITEMS.find(x => x.id === id);
+            if (state.food >= item.cost && !state.ownedPackItems.includes(id)) {
+                state.food -= item.cost;
+                state.ownedPackItems.push(id);
+                log(`🐺 获得配置：${item.name}`, 'text-sky-400');
+                updateUI();
+            }
+        }
+
+        function triggerRebirth() {
+            const nextBonus = getNextGeneBonus();
+            const maxMonths = getMaxLifespanYears() * 12;
+
+            if (state.ageMonths < maxMonths && nextBonus <= 0) return;
+
+            state.geneMemory += nextBonus;
+            state.ageMonths = 0;
+            state.tickProgress = 0;
+            state.food = 10.0;
+            state.dominance = 0.0;
+            state.activeBehavior = 'insects';
+            state.paused = false;
+
+            // 重置等级
+            Object.keys(state.behaviors).forEach(b => state.behaviors[b].level = b === 'insects' ? 1 : 0);
+            Object.keys(state.instincts).forEach(i => {
+                state.instincts[i].level = 0;
+                state.instincts[i].xp = 0;
+            });
+
+            log(`🧬 血脉已传承！新一代基因印记: ${state.geneMemory.toFixed(2)}x`, 'text-emerald-400');
+            updateUI();
+        }
+
+        function togglePause() {
+            state.paused = !state.paused;
+            document.getElementById('btn-pause').innerText = state.paused ? '继续' : '暂停';
+        }
+
+        function switchTab(tab) {
+            ['behaviors', 'instincts', 'lair'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                const panel = document.getElementById(`panel-${t}`);
+                if (t === tab) {
+                    btn.className = 'font-bold text-amber-500 border-b-2 border-amber-500 pb-1';
+                    panel.classList.remove('hidden');
+                } else {
+                    btn.className = 'font-bold text-zinc-500 hover:text-zinc-300 pb-1';
+                    panel.classList.add('hidden');
+                }
+            });
+        }
+
+        function log(msg, colorClass = 'text-zinc-400') {
+            const box = document.getElementById('game-log');
+            const p = document.createElement('p');
+            p.className = colorClass;
+            p.innerText = msg;
+            box.appendChild(p);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // --- 6. UI 渲染 ---
+        function updateUI() {
+            const gain = getBehaviorGain(state.activeBehavior);
+            const netFood = gain.food - getFoodUpkeep();
+            document.getElementById('hdr-food').innerText = state.food.toFixed(1);
+            document.getElementById('hdr-food-net').innerText = `(${netFood >= 0 ? '+' : ''}${netFood.toFixed(1)}/s)`;
+            document.getElementById('hdr-dom').innerText = state.dominance.toFixed(1);
+            document.getElementById('hdr-mult').innerText = `${getGlobalXpMultiplier().toFixed(2)}x`;
+
+            const yrs = (state.ageMonths / 12).toFixed(1);
+            const maxYrs = getMaxLifespanYears().toFixed(1);
+            document.getElementById('lbl-age').innerText = `${yrs} / ${maxYrs} 岁`;
+            const agePct = Math.min(100, (state.ageMonths / (getMaxLifespanYears() * 12)) * 100);
+            document.getElementById('bar-age').style.width = `${agePct}%`;
+
+            const nextBonus = getNextGeneBonus();
+            document.getElementById('lbl-gene-current').innerText = `当前: ${state.geneMemory.toFixed(2)}x`;
+            document.getElementById('lbl-gene-next').innerText = `+${nextBonus.toFixed(2)}x`;
+            
+            const btnRebirth = document.getElementById('btn-rebirth');
+            const canRebirth = (state.ageMonths >= getMaxLifespanYears() * 12) || (nextBonus > 0);
+            btnRebirth.disabled = !canRebirth;
+            btnRebirth.innerText = canRebirth ? `繁衍后代 (基因 +${nextBonus.toFixed(2)}x)` : '繁衍后代 (需先提升本能)';
+
+            // 1. 行为列表
+            const bPanel = document.getElementById('panel-behaviors');
+            bPanel.innerHTML = '';
+            Object.values(BEHAVIORS).forEach(b => {
+                let unlocked = true;
+                if (b.req) {
+                    if (b.req.type === 'instinct') unlocked = state.instincts[b.req.id].level >= b.req.level;
+                    if (b.req.type === 'behavior') unlocked = state.behaviors[b.req.id].level >= b.req.level;
+                }
+                if (!unlocked) return;
+
+                const isActive = state.activeBehavior === b.id;
+                const bState = state.behaviors[b.id];
+                const bGain = getBehaviorGain(b.id);
+
+                const item = document.createElement('div');
+                item.className = `p-2 rounded border cursor-pointer transition ${isActive ? 'bg-amber-950/20 border-amber-600' : 'bg-zinc-900 border-zinc-800'}`;
+                item.onclick = () => setActiveBehavior(b.id);
+
+                item.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <div class="flex items-center space-x-2">
+                            <span class="font-bold ${isActive ? 'text-amber-400' : 'text-zinc-200'}">${b.name}</span>
+                            <span class="text-[10px] bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400">Lv.${Math.floor(bState.level)}</span>
+                        </div>
+                        <div class="font-mono text-[11px] space-x-2">
+                            <span class="text-emerald-400">+${bGain.food.toFixed(1)} Food</span>
+                            ${bGain.dom > 0 ? `<span class="text-purple-400">+${bGain.dom.toFixed(1)} Dom</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="w-full bg-zinc-950 h-1.5 rounded-full overflow-hidden border border-zinc-800">
+                        <div class="bg-amber-500 h-full bar-fill" style="width: ${isActive ? state.tickProgress : 0}%"></div>
+                    </div>
+                `;
+                bPanel.appendChild(item);
+            });
+
+            // 2. 本能列表
+            const iPanel = document.getElementById('panel-instincts');
+            iPanel.innerHTML = '';
+            Object.values(INSTINCTS).forEach(ins => {
+                const insState = state.instincts[ins.id];
+                const req = getXpReq(ins.id, insState.level);
+                const pct = Math.min(100, (insState.xp / req) * 100);
+
+                const item = document.createElement('div');
+                item.className = 'p-2 bg-zinc-900 border border-zinc-800 rounded space-y-1';
+                item.innerHTML = `
+                    <div class="flex justify-between items-center font-mono">
+                        <span class="font-bold text-zinc-200">${ins.name} <span class="text-zinc-500 font-normal">(${ins.desc})</span></span>
+                        <span class="text-amber-400">Lv.${insState.level}</span>
+                    </div>
+                    <div class="w-full bg-zinc-950 h-1.5 rounded-full overflow-hidden border border-zinc-800">
+                        <div class="bg-amber-500 h-full bar-fill" style="width: ${pct}%"></div>
+                    </div>
+                `;
+                iPanel.appendChild(item);
+            });
+
+            // 3. 栖息地与配置列表
+            const lairBox = document.getElementById('list-lairs');
+            lairBox.innerHTML = '';
+            LAIRS.forEach(l => {
+                const isCurrent = state.currentLair === l.id;
+                const div = document.createElement('div');
+                div.className = `p-2 rounded border flex justify-between items-center ${isCurrent ? 'bg-amber-950/20 border-amber-600' : 'bg-zinc-900 border-zinc-800'}`;
+                div.innerHTML = `
+                    <div>
+                        <span class="font-bold text-zinc-200">${l.name}</span>
+                        <span class="text-zinc-500 text-[10px] ml-2">开销: -${l.upkeep}/s | 繁荣度: +${l.prosperity}</span>
+                    </div>
+                    ${!isCurrent ? `<button onclick="buyLair('${l.id}')" ${state.food < l.cost ? 'disabled' : ''} class="px-2 py-0.5 bg-amber-600 hover:bg-amber-500 disabled:bg-zinc-800 font-bold text-black rounded text-[11px]">入住 (${l.cost} 食物)</button>` : '<span class="text-amber-500 font-bold text-[10px]">已入住</span>'}
+                `;
+                lairBox.appendChild(div);
+            });
+
+            const packBox = document.getElementById('list-pack');
+            packBox.innerHTML = '';
+            PACK_ITEMS.forEach(item => {
+                const owned = state.ownedPackItems.includes(item.id);
+                const div = document.createElement('div');
+                div.className = `p-2 rounded border ${owned ? 'bg-emerald-950/20 border-emerald-800' : 'bg-zinc-900 border-zinc-800'}`;
+                div.innerHTML = `
+                    <div class="space-y-1">
+                        <div class="font-bold text-zinc-200">${item.name}</div>
+                        <div class="text-zinc-500 text-[10px]">${item.desc} (开销: -${item.upkeep}/s)</div>
+                        ${!owned ? `<button onclick="buyPackItem('${item.id}')" ${state.food < item.cost ? 'disabled' : ''} class="w-full mt-1 py-0.5 bg-amber-600 hover:bg-amber-500 disabled:bg-zinc-800 font-bold text-black rounded text-[11px]">购买 (${item.cost} 食物)</button>` : '<span class="text-emerald-400 font-bold text-[10px]">已拥有</span>'}
+                    </div>
+                `;
+                packBox.appendChild(div);
+            });
+        }
+
+        function hardReset() {
+            if (confirm('确定清空所有存档重新开始吗？')) {
+                localStorage.removeItem('wild_evo_save');
+                location.reload();
+            }
+        }
+
+        function saveGame(manual = false) {
+            localStorage.setItem('wild_evo_save', JSON.stringify(state));
+            if (manual) log('💾 游戏保存成功！', 'text-emerald-400');
+        }
+
+        function loadGame() {
+            const save = localStorage.getItem('wild_evo_save');
+            if (save) {
+                try {
+                    state = { ...state, ...JSON.parse(save) };
+                } catch(e) {}
+            }
+        }
+
+        window.onload = () => {
+            loadGame();
+            updateUI();
+            setInterval(gameTick, 100);
+            setInterval(() => saveGame(false), 5000);
+        };
+    </script>
+</body>
+</html>
